@@ -3,12 +3,11 @@ loglevel: 1
 deployment:
   - name: shell
     config:
+      shell: "/bin/bash"
+      shell_args:
+        - "-c"
       host: localhost
       commands:
-        - echo "foo command running!"
-        - echo "doing something..."
-        - echo "done!"
+        - "examples/deploy.sh"
       rollback_commands:
-        - echo "Rollback command running!"
-        - echo "./panic --string lucky this is a test"
-        - echo "rollback done!"
+        - "examples/rollback.sh"
