@@ -1,0 +1,11 @@
+name: ECS Example
+loglevel: 1
+deployment:
+    - name: ecs
+      config:
+        cluster_name: "matts-cluster"
+        application: "godspeed-hack"
+        task_definition: "examples/sample.json"
+        region: "ap-southeast-2"
+        elb: "http://godspeed-hack-1631427837.ap-southeast-2.elb.amazonaws.com"
+

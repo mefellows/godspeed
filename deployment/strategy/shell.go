@@ -41,6 +41,7 @@ func (s ShellDeploymentStrategy) runCommand(c string) error {
 	// Create command string
 	cmd := s.createCommand(c)
 	log.Info(" --> Running command: %s", c)
+
 	// Create command string
 	out, err := cmd.Output()
 	if err != nil {
