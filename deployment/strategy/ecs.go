@@ -10,12 +10,13 @@ import (
 )
 
 type ECSDeploymentStrategy struct {
-	ClusterName    string `mapstructure:"cluster_name"`
-	Application    string
-	Region         string `default:"ap-southeast-2"`
-	TaskDefinition string `mapstructure:"task_definition"`
-	ecs            *ecs.ECS
-	ELB            string
+	ClusterName       string `mapstructure:"cluster_name"`
+	Application       string
+	Region            string `default:"ap-southeast-2"`
+	TaskDefinition    string `mapstructure:"task_definition"`
+	ecs               *ecs.ECS
+	ELB               string
+	taskDefinitionARN string
 }
 
 func init() {
@@ -58,11 +59,64 @@ func (s *ECSDeploymentStrategy) checkCluster(cluster string) {
 	}
 }
 
+func (s *ECSDeploymentStrategy) registerTask(taskJson string) {
+	params := &ecs.RegisterTaskDefinitionInput{
+		ContainerDefinitions: []*ecs.ContainerDefinition{ // Required
+			{
+				Essential: aws.Bool(true),
+				Image:     aws.String("amazon/amazon-ecs-sample"),
+				Name:      aws.String("godspeedweb"),
+				Memory:    aws.Int64(512),
+				PortMappings: []*ecs.PortMapping{
+					{ // Required
+						ContainerPort: aws.Int64(80),
+						HostPort:      aws.Int64(80),
+						Protocol:      aws.String("tcp"),
+					},
+				},
+			},
+		},
+		Family: aws.String(s.Application),
+	}
+	resp, err := s.ecs.RegisterTaskDefinition(params)
+
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	s.taskDefinitionARN = *resp.TaskDefinition.TaskDefinitionArn
+	log.Info("Task %s created", s.taskDefinitionARN)
+}
+
+func (s *ECSDeploymentStrategy) createService() {
+	params := &ecs.CreateServiceInput{
+		DesiredCount:   aws.Int64(1),       // Required
+		ServiceName:    aws.String("demo"), // Required
+		TaskDefinition: aws.String(s.taskDefinitionARN),
+		Cluster:        aws.String(s.ClusterName),
+		LoadBalancers: []*ecs.LoadBalancer{
+			{ // Required
+				ContainerName:    aws.String("godspeedweb"),
+				ContainerPort:    aws.Int64(80),
+				LoadBalancerName: aws.String("godspeed-hack"),
+			},
+		},
+		Role: aws.String("ecsServiceRole"),
+	}
+	_, err := s.ecs.CreateService(params)
+
+	if err != nil {
+		log.Fatal(err.Error())
+		return
+	}
+}
+
 func (s *ECSDeploymentStrategy) Deploy() error {
 	log.Info("Deploying to ECS")
 
 	s.checkCluster(s.ClusterName)
-	//s.registerTask()
+	s.registerTask(s.TaskDefinition)
+	s.createService()
 
 	return nil
 }
