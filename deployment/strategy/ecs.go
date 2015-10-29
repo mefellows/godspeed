@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ecs"
 	"github.com/mefellows/godspeed/log"
@@ -10,13 +11,33 @@ import (
 )
 
 type ECSDeploymentStrategy struct {
-	ClusterName       string `mapstructure:"cluster_name"`
-	Application       string
-	Region            string `default:"ap-southeast-2"`
-	TaskDefinition    string `mapstructure:"task_definition"`
 	ecs               *ecs.ECS
-	ELB               string
 	taskDefinitionARN string
+
+	// Config Items
+	ClusterName    string `mapstructure:"cluster_name"`
+	Application    string
+	Region         string `default:"ap-southeast-2"`
+	TaskDefinition string `mapstructure:"task_definition"`
+	ELB            string
+	ElbId          string `mapstructure:"elb_id"`
+	Containers     []ContainerDefinition
+	Service        Service
+}
+
+type Service struct {
+	Name        string
+	Application string
+}
+
+type ContainerDefinition struct {
+	Name         string
+	Links        []string
+	Image        string
+	Essential    bool
+	PortMappings map[int]int `mapstructure:"port_mappings"`
+	Memory       int
+	Environment  map[string]string
 }
 
 func init() {
@@ -60,24 +81,30 @@ func (s *ECSDeploymentStrategy) checkCluster(cluster string) {
 }
 
 func (s *ECSDeploymentStrategy) registerTask(taskJson string) {
-	params := &ecs.RegisterTaskDefinitionInput{
-		ContainerDefinitions: []*ecs.ContainerDefinition{ // Required
-			{
-				Essential: aws.Bool(true),
-				Image:     aws.String("amazon/amazon-ecs-sample"),
-				Name:      aws.String("godspeedweb"),
-				Memory:    aws.Int64(512),
-				PortMappings: []*ecs.PortMapping{
-					{ // Required
-						ContainerPort: aws.Int64(80),
-						HostPort:      aws.Int64(80),
-						Protocol:      aws.String("tcp"),
-					},
+
+	definitions := make([]*ecs.ContainerDefinition, len(s.Containers))
+
+	for i, d := range s.Containers {
+		definitions[i] = &ecs.ContainerDefinition{
+			Essential: aws.Bool(d.Essential),
+			Image:     aws.String(d.Image),
+			Name:      aws.String(d.Name),
+			Memory:    aws.Int64(int64(d.Memory)),
+			PortMappings: []*ecs.PortMapping{
+				{
+					ContainerPort: aws.Int64(80),
+					HostPort:      aws.Int64(80),
+					Protocol:      aws.String("tcp"),
 				},
 			},
-		},
-		Family: aws.String(s.Application),
+		}
 	}
+
+	params := &ecs.RegisterTaskDefinitionInput{
+		ContainerDefinitions: definitions,
+		Family:               aws.String(s.Application),
+	}
+
 	resp, err := s.ecs.RegisterTaskDefinition(params)
 
 	if err != nil {
@@ -88,26 +115,70 @@ func (s *ECSDeploymentStrategy) registerTask(taskJson string) {
 	log.Info("Task %s created", s.taskDefinitionARN)
 }
 
-func (s *ECSDeploymentStrategy) createService() {
-	params := &ecs.CreateServiceInput{
-		DesiredCount:   aws.Int64(1),       // Required
-		ServiceName:    aws.String("demo"), // Required
-		TaskDefinition: aws.String(s.taskDefinitionARN),
-		Cluster:        aws.String(s.ClusterName),
-		LoadBalancers: []*ecs.LoadBalancer{
-			{ // Required
-				ContainerName:    aws.String("godspeedweb"),
-				ContainerPort:    aws.Int64(80),
-				LoadBalancerName: aws.String("godspeed-hack"),
-			},
+func (s *ECSDeploymentStrategy) serviceExists(service string) bool {
+	params := &ecs.DescribeServicesInput{
+		Services: []*string{
+			aws.String(service),
 		},
-		Role: aws.String("ecsServiceRole"),
+		Cluster: aws.String(s.ClusterName),
 	}
-	_, err := s.ecs.CreateService(params)
+	resp, err := s.ecs.DescribeServices(params)
 
 	if err != nil {
 		log.Fatal(err.Error())
-		return
+		return false
+	}
+
+	if len(resp.Services) > 0 && *resp.Services[0].Status == "ACTIVE" {
+		return true
+
+	}
+	return false
+
+}
+
+func (s *ECSDeploymentStrategy) createOrUpdateService() {
+	exists := s.serviceExists(s.Service.Name)
+
+	// If service does not exist...
+	if !exists {
+		log.Info(fmt.Sprintf("Service %s not created, creating...", s.Service.Name))
+		params := &ecs.CreateServiceInput{
+			DesiredCount:   aws.Int64(1),               // Required
+			ServiceName:    aws.String(s.Service.Name), // Required
+			TaskDefinition: aws.String(s.taskDefinitionARN),
+			Cluster:        aws.String(s.ClusterName),
+			LoadBalancers: []*ecs.LoadBalancer{
+				{ // Required
+					ContainerName:    aws.String(s.Service.Application),
+					ContainerPort:    aws.Int64(80),
+					LoadBalancerName: aws.String(s.ElbId),
+				},
+			},
+			Role: aws.String("ecsServiceRole"),
+		}
+		_, err := s.ecs.CreateService(params)
+
+		if err != nil {
+			log.Fatal(err.Error())
+			return
+		}
+
+	} else {
+		log.Info(fmt.Sprintf("Service %s already created, updating...", s.Service.Name))
+		params := &ecs.UpdateServiceInput{
+			DesiredCount:   aws.Int64(1),               // Required
+			Service:        aws.String(s.Service.Name), // Required
+			TaskDefinition: aws.String(s.taskDefinitionARN),
+			Cluster:        aws.String(s.ClusterName),
+		}
+		_, err := s.ecs.UpdateService(params)
+
+		if err != nil {
+			log.Fatal(err.Error())
+			return
+		}
+
 	}
 }
 
@@ -116,7 +187,7 @@ func (s *ECSDeploymentStrategy) Deploy() error {
 
 	s.checkCluster(s.ClusterName)
 	s.registerTask(s.TaskDefinition)
-	s.createService()
+	s.createOrUpdateService()
 
 	return nil
 }

@@ -7,4 +7,23 @@ deployment:
         application: "godspeed-hack"
         region: "ap-southeast-2"
         elb: "http://godspeed-hack-1631427837.ap-southeast-2.elb.amazonaws.com"
+        elb_id: "godspeed-hack"
+        containers:
+        - name: "web"
+          image: "amazon/amazon-ecs-sample"
+          memory: 128
+          essential: true
+          port_mappings:
+            80: 80
+        service:
+          name: "godspeed-hack"
+          application: "web"
+    - name: shell
+      config:
+        shell: "/bin/bash"
+        shell_args:
+            - "-c"
+        host: localhost
+        commands:
+            - "examples/smoke.sh"
 
