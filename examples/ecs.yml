@@ -1,5 +1,5 @@
 name: ECS Example
-loglevel: 1
+loglevel: 2
 deployment:
     - name: ecs
       config:
@@ -26,4 +26,3 @@ deployment:
         host: localhost
         commands:
             - "examples/smoke.sh"
-

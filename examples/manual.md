@@ -13,7 +13,10 @@ aws ecs register-task-definition --family godspeed-hack  --cli-input-json file:/
 
 // Run task
 
-aws ecs run-task  --cluster matts-cluster --task-definition arn:aws:ecs:ap-southeast-2:773592622512:task-definition/godspeed-hack:1 --region ap-southeast-2
+aws ecs create-service  --cluster matts-cluster --service-name pact-broker --task-definition arn:aws:ecs:ap-southeast-2:773592622512:task-definition/godspeed-hack:1 --region ap-southeast-2 --load-balancers loadBalancerName=godspeed-hack,containerName=pact_broker,containerPort=80 --desired-count 1 --role ecsServiceRole
+
+
+//aws ecs run-task  --cluster matts-cluster --task-definition arn:aws:ecs:ap-southeast-2:773592622512:task-definition/godspeed-hack:1 --region ap-southeast-2
 
 // Grab Task ARN
 

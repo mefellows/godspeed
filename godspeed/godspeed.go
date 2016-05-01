@@ -9,6 +9,7 @@ type GodspeedConfig struct {
 	RawConfig  *plugo.RawConfig
 	ConfigFile string
 }
+
 type PluginConfig struct {
 	Name        string
 	Description string
